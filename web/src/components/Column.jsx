@@ -1,4 +1,16 @@
-export default function Column({ title, items, selectedId, onSelect, subtitle, search, onSearch, emptyLabel }) {
+export default function Column({
+  title,
+  items,
+  selectedId,
+  onSelect,
+  subtitle,
+  search,
+  onSearch,
+  emptyLabel,
+  sortOptions,
+  sortValue,
+  onSortChange,
+}) {
   return (
     <div className="flex flex-col w-full h-full border-r border-zinc-800 min-w-0">
       <div className="px-3 py-2 border-b border-zinc-800 shrink-0">
@@ -10,6 +22,19 @@ export default function Column({ title, items, selectedId, onSelect, subtitle, s
             placeholder="Buscar..."
             className="mt-2 w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs focus:outline-none focus:border-zinc-600"
           />
+        )}
+        {sortOptions && (
+          <select
+            value={sortValue}
+            onChange={(e) => onSortChange(e.target.value)}
+            className="mt-2 w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs focus:outline-none focus:border-zinc-600"
+          >
+            {sortOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         )}
       </div>
       <div className="flex-1 overflow-y-auto">

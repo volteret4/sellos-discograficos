@@ -73,7 +73,7 @@ git submodule add https://github.com/volteret4/sellos-discograficos.git services
 rsync -avz ~/gits/pollo/music-fuzzy/db/sqlite/musica_local.sqlite \
   pepecono:~/contenedores/repeat-one/services/sellos-discograficos/musica_local.sqlite
 
-scripts/up.sh --profile sellos-discograficos up -d --build
+scripts/up.sh --profile sellos_discograficos up -d --build
 # abre http://<servidor>:8758
 ```
 

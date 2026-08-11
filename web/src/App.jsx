@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Column from "./components/Column.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
@@ -11,9 +11,28 @@ import {
   fetchProducerArtistAlbums,
 } from "./api.js";
 
+const SORT_OPTIONS = [
+  { value: "name", label: "Orden alfabético" },
+  { value: "artist_count", label: "Nº de artistas" },
+  { value: "album_count", label: "Nº de discos" },
+];
+
+function sortGroups(items, sortBy) {
+  const arr = [...items];
+  arr.sort((a, b) => {
+    if (sortBy !== "name") {
+      const diff = (b[sortBy] || 0) - (a[sortBy] || 0);
+      if (diff !== 0) return diff;
+    }
+    return a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+  });
+  return arr;
+}
+
 export default function App() {
   const [mode, setMode] = useState("labels"); // "labels" | "producers"
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name");
   const [group, setGroup] = useState(null); // selected label or producer
   const [artist, setArtist] = useState(null); // selected artist
   const [detail, setDetail] = useState(null); // { kind, id }
@@ -32,6 +51,11 @@ export default function App() {
     queryKey: [mode, "groups", search],
     queryFn: () => (mode === "labels" ? fetchLabels(search) : fetchProducers(search)),
   });
+
+  const sortedGroups = useMemo(
+    () => sortGroups(groupsQuery.data || [], sortBy),
+    [groupsQuery.data, sortBy]
+  );
 
   const groupId = group ? (mode === "labels" ? group.id : group.slug) : null;
 
@@ -89,11 +113,14 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
         <Column
           title={mode === "labels" ? "Sellos" : "Productores"}
-          items={groupsQuery.data || []}
+          items={sortedGroups}
           selectedId={groupId}
           onSelect={selectGroup}
           search={search}
           onSearch={setSearch}
+          sortOptions={SORT_OPTIONS}
+          sortValue={sortBy}
+          onSortChange={setSortBy}
           subtitle={(item) => `${item.artist_count} artistas · ${item.album_count} discos`}
           emptyLabel={groupsQuery.isLoading ? "Cargando..." : "Sin resultados"}
         />
