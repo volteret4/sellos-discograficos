@@ -155,34 +155,40 @@ export default function App() {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        <Column
-          title={mode === "labels" ? "Sellos" : "Productores"}
-          items={sortedGroups}
-          selectedId={groupId}
-          onSelect={selectGroup}
-          search={search}
-          onSearch={setSearch}
-          sortOptions={SORT_OPTIONS}
-          sortValue={sortBy}
-          onSortChange={setSortBy}
-          subtitle={(item) => `${item.artist_count} artistas · ${item.album_count} discos`}
-          emptyLabel={groupsQuery.isLoading ? "Cargando..." : "Sin resultados"}
-        />
-        <Column
-          title="Artistas"
-          items={artistsQuery.data || []}
-          selectedId={artist?.id}
-          onSelect={selectArtist}
-          subtitle={(item) => `${item.album_count} discos`}
-          emptyLabel={group ? (artistsQuery.isLoading ? "Cargando..." : "Sin artistas") : "Elige un sello o productor"}
-        />
-        <AlbumColumn
-          primaryAlbums={albumsQuery.data || []}
-          extraAlbums={extraAlbums}
-          onSelectPrimary={selectAlbum}
-          onSelectExtra={selectForeignAlbum}
-          emptyLabel={artist ? (albumsQuery.isLoading ? "Cargando..." : "Sin discos") : "Elige un artista"}
-        />
+        <div className="flex-1 min-w-0">
+          <Column
+            title={mode === "labels" ? "Sellos" : "Productores"}
+            items={sortedGroups}
+            selectedId={groupId}
+            onSelect={selectGroup}
+            search={search}
+            onSearch={setSearch}
+            sortOptions={SORT_OPTIONS}
+            sortValue={sortBy}
+            onSortChange={setSortBy}
+            subtitle={(item) => `${item.artist_count} artistas · ${item.album_count} discos`}
+            emptyLabel={groupsQuery.isLoading ? "Cargando..." : "Sin resultados"}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <Column
+            title="Artistas"
+            items={artistsQuery.data || []}
+            selectedId={artist?.id}
+            onSelect={selectArtist}
+            subtitle={(item) => `${item.album_count} discos`}
+            emptyLabel={group ? (artistsQuery.isLoading ? "Cargando..." : "Sin artistas") : "Elige un sello o productor"}
+          />
+        </div>
+        <div className="flex-[2] min-w-0">
+          <AlbumColumn
+            primaryAlbums={albumsQuery.data || []}
+            extraAlbums={extraAlbums}
+            onSelectPrimary={selectAlbum}
+            onSelectExtra={selectForeignAlbum}
+            emptyLabel={artist ? (albumsQuery.isLoading ? "Cargando..." : "Sin discos") : "Elige un artista"}
+          />
+        </div>
       </div>
 
       {detail && <DetailPanel detail={detail} onClose={() => setDetail(null)} />}
