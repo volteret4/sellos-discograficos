@@ -1,0 +1,6 @@
+.venv
+.git
+web
+covers
+*.sqlite*
+__pycache__
