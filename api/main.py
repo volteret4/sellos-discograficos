@@ -138,6 +138,25 @@ def get_artist(artist_id: int):
     return artist
 
 
+@app.get("/api/artists/{artist_id}/albums")
+def artist_albums(artist_id: int):
+    # label_id es orientativo: si un disco tiene más de un sello enlazado en
+    # label_release_relationships se coge el primero — solo se usa para
+    # poder saltar de "otro disco de este artista" al sello correspondiente,
+    # no para el filtrado principal (eso sigue viniendo de /labels/{id}/artists/...).
+    return query(
+        """
+        SELECT al.*,
+               (SELECT lrr.label_id FROM label_release_relationships lrr
+                WHERE lrr.album_id = al.id LIMIT 1) AS label_id
+        FROM albums al
+        WHERE al.artist_id = ?
+        ORDER BY al.year
+        """,
+        (artist_id,),
+    )
+
+
 @app.get("/api/albums/{album_id}")
 def get_album(album_id: int):
     album = query_one(

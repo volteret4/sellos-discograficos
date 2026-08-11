@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Column from "./components/Column.jsx";
+import AlbumColumn from "./components/AlbumColumn.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import {
   fetchLabels,
@@ -9,6 +10,7 @@ import {
   fetchProducers,
   fetchProducerArtists,
   fetchProducerArtistAlbums,
+  fetchArtistAlbums,
 } from "./api.js";
 
 const SORT_OPTIONS = [
@@ -27,6 +29,11 @@ function sortGroups(items, sortBy) {
     return a.name.localeCompare(b.name, "es", { sensitivity: "base" });
   });
   return arr;
+}
+
+// Debe coincidir con api/producers.py::_slugify
+function slugify(name) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }
 
 export default function App() {
@@ -75,6 +82,21 @@ export default function App() {
     enabled: !!groupId && !!artist,
   });
 
+  // Resto de discos del artista seleccionado, para mostrarlos atenuados
+  // junto a los del sello/productor activo.
+  const artistAlbumsQuery = useQuery({
+    queryKey: ["artist-albums", artist?.id],
+    queryFn: () => fetchArtistAlbums(artist.id),
+    enabled: !!artist,
+  });
+
+  const extraAlbums = useMemo(() => {
+    const primaryIds = new Set((albumsQuery.data || []).map((a) => a.id));
+    return (artistAlbumsQuery.data || [])
+      .filter((a) => !primaryIds.has(a.id))
+      .sort((a, b) => (a.year || "").localeCompare(b.year || ""));
+  }, [albumsQuery.data, artistAlbumsQuery.data]);
+
   function selectGroup(item) {
     setGroup(item);
     setArtist(null);
@@ -88,6 +110,28 @@ export default function App() {
 
   function selectAlbum(item) {
     setDetail({ kind: "album", id: item.id });
+  }
+
+  // Disco de este mismo artista pero fuera del sello/productor activo:
+  // saltamos el filtro de columna 1 al sello/productor de ESE disco,
+  // manteniendo el artista seleccionado.
+  function selectForeignAlbum(album) {
+    if (mode === "labels") {
+      if (album.label_id) {
+        setGroup({ id: album.label_id, name: album.label });
+        setSearch("");
+      }
+    } else {
+      const producers = (album.producers || "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (producers.length) {
+        setGroup({ slug: slugify(producers[0]), name: producers[0] });
+        setSearch("");
+      }
+    }
+    setDetail({ kind: "album", id: album.id });
   }
 
   return (
@@ -132,12 +176,11 @@ export default function App() {
           subtitle={(item) => `${item.album_count} discos`}
           emptyLabel={group ? (artistsQuery.isLoading ? "Cargando..." : "Sin artistas") : "Elige un sello o productor"}
         />
-        <Column
-          title="Discos"
-          items={albumsQuery.data || []}
-          selectedId={null}
-          onSelect={selectAlbum}
-          subtitle={(item) => item.year || ""}
+        <AlbumColumn
+          primaryAlbums={albumsQuery.data || []}
+          extraAlbums={extraAlbums}
+          onSelectPrimary={selectAlbum}
+          onSelectExtra={selectForeignAlbum}
           emptyLabel={artist ? (albumsQuery.isLoading ? "Cargando..." : "Sin discos") : "Elige un artista"}
         />
       </div>

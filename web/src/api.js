@@ -45,6 +45,10 @@ export function fetchArtist(id) {
   return fetch(`${BASE}/artists/${id}`).then(_json);
 }
 
+export function fetchArtistAlbums(id) {
+  return fetch(`${BASE}/artists/${id}/albums`).then(_json);
+}
+
 export function fetchAlbum(id) {
   return fetch(`${BASE}/albums/${id}`).then(_json);
 }
