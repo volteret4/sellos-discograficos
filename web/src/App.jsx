@@ -4,15 +4,18 @@ import Column from "./components/Column.jsx";
 import AlbumColumn from "./components/AlbumColumn.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import {
-  fetchLabels,
-  fetchLabelArtists,
-  fetchLabelArtistAlbums,
-  fetchProducers,
-  fetchProducerArtists,
-  fetchProducerArtistAlbums,
+  fetchGroups,
+  fetchGroupArtists,
+  fetchGroupArtistAlbums,
   fetchArtists,
   fetchArtistAlbums,
 } from "./api.js";
+
+const MODES = [
+  { kind: "labels", tabLabel: "Sellos", columnTitle: "Sellos", field: "label" },
+  { kind: "producers", tabLabel: "Productores", columnTitle: "Productores", field: "producers" },
+  { kind: "masters", tabLabel: "Masters", columnTitle: "Masters", field: "mastering_engineers" },
+];
 
 const SORT_OPTIONS = [
   { value: "name", label: "Orden alfabético" },
@@ -32,21 +35,29 @@ function sortGroups(items, sortBy) {
   return arr;
 }
 
-// Debe coincidir con api/producers.py::_slugify
+// Debe coincidir con api/text_groups.py::_slugify
 function slugify(name) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }
 
+// Sellos no se trocea por comas (nombres de sello pueden llevar ", Inc" /
+// ", S.L."), Productores/Masters sí — debe coincidir con text_groups.py.
+function firstValue(kind, raw) {
+  const text = (raw || "").trim();
+  if (!text) return "";
+  return kind === "labels" ? text : text.split(",")[0].trim();
+}
+
 export default function App() {
-  const [mode, setMode] = useState("labels"); // "labels" | "producers"
+  const [mode, setMode] = useState("labels"); // "labels" | "producers" | "masters"
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("name");
-  const [group, setGroup] = useState(null); // selected label or producer
+  const [group, setGroup] = useState(null); // { slug, name }
   const [artistSearch, setArtistSearch] = useState("");
   const [artist, setArtist] = useState(null); // selected artist
   const [detail, setDetail] = useState(null); // { kind, id }
 
-  const groupKind = mode === "labels" ? "label" : "producer";
+  const modeInfo = MODES.find((m) => m.kind === mode);
 
   function switchMode(next) {
     setMode(next);
@@ -59,7 +70,7 @@ export default function App() {
 
   const groupsQuery = useQuery({
     queryKey: [mode, "groups", search],
-    queryFn: () => (mode === "labels" ? fetchLabels(search) : fetchProducers(search)),
+    queryFn: () => fetchGroups(mode, search),
   });
 
   const sortedGroups = useMemo(
@@ -67,15 +78,15 @@ export default function App() {
     [groupsQuery.data, sortBy]
   );
 
-  const groupId = group ? (mode === "labels" ? group.id : group.slug) : null;
+  const groupSlug = group?.slug || null;
 
-  // Artistas del sello/productor seleccionado — se filtran en el cliente
-  // con el cuadro de búsqueda (listas pequeñas, no hace falta ir al server).
+  // Artistas del sello/productor/master seleccionado — se filtran en el
+  // cliente con el cuadro de búsqueda (listas pequeñas, no hace falta ir al
+  // server).
   const groupArtistsQuery = useQuery({
-    queryKey: [mode, "artists", groupId],
-    queryFn: () =>
-      mode === "labels" ? fetchLabelArtists(groupId) : fetchProducerArtists(groupId),
-    enabled: !!groupId,
+    queryKey: [mode, "artists", groupSlug],
+    queryFn: () => fetchGroupArtists(mode, groupSlug),
+    enabled: !!groupSlug,
   });
 
   const filteredGroupArtists = useMemo(() => {
@@ -84,24 +95,21 @@ export default function App() {
     return q ? data.filter((a) => a.name.toLowerCase().includes(q)) : data;
   }, [groupArtistsQuery.data, artistSearch]);
 
-  // Sin sello/productor marcado: busca entre todos los artistas de la
-  // colección (requiere texto para no traerse miles de filas de golpe).
+  // Sin sello/productor/master marcado: busca entre todos los artistas de
+  // la colección (requiere texto para no traerse miles de filas de golpe).
   const globalArtistsQuery = useQuery({
     queryKey: ["artists-search", artistSearch],
     queryFn: () => fetchArtists(artistSearch),
-    enabled: !groupId && artistSearch.trim().length > 0,
+    enabled: !groupSlug && artistSearch.trim().length > 0,
   });
 
-  const artistsQuery = groupId ? groupArtistsQuery : globalArtistsQuery;
-  const artistItems = groupId ? filteredGroupArtists : globalArtistsQuery.data || [];
+  const artistsQuery = groupSlug ? groupArtistsQuery : globalArtistsQuery;
+  const artistItems = groupSlug ? filteredGroupArtists : globalArtistsQuery.data || [];
 
   const albumsQuery = useQuery({
-    queryKey: [mode, "albums", groupId, artist?.id],
-    queryFn: () =>
-      mode === "labels"
-        ? fetchLabelArtistAlbums(groupId, artist.id)
-        : fetchProducerArtistAlbums(groupId, artist.id),
-    enabled: !!groupId && !!artist,
+    queryKey: [mode, "albums", groupSlug, artist?.id],
+    queryFn: () => fetchGroupArtistAlbums(mode, groupSlug, artist.id),
+    enabled: !!groupSlug && !!artist,
   });
 
   // Discografía completa del artista seleccionado.
@@ -111,23 +119,29 @@ export default function App() {
     enabled: !!artist,
   });
 
-  // Con sello/productor activo: los del filtro como principales y el resto
-  // de la discografía atenuada debajo. Sin filtro activo (búsqueda global
-  // de artista): la discografía completa tal cual, sin sección "otros".
-  const primaryAlbums = groupId ? albumsQuery.data || [] : artistAlbumsQuery.data || [];
+  // Con sello/productor/master activo: los del filtro como principales y el
+  // resto de la discografía atenuada debajo. Sin filtro activo (búsqueda
+  // global de artista): la discografía completa tal cual, sin sección
+  // "otros".
+  const primaryAlbums = groupSlug ? albumsQuery.data || [] : artistAlbumsQuery.data || [];
   const extraAlbums = useMemo(() => {
-    if (!groupId) return [];
+    if (!groupSlug) return [];
     const primaryIds = new Set((albumsQuery.data || []).map((a) => a.id));
     return (artistAlbumsQuery.data || [])
       .filter((a) => !primaryIds.has(a.id))
       .sort((a, b) => (a.year || "").localeCompare(b.year || ""));
-  }, [groupId, albumsQuery.data, artistAlbumsQuery.data]);
+  }, [groupSlug, albumsQuery.data, artistAlbumsQuery.data]);
+
+  function metaText(album) {
+    const value = firstValue(mode, album[modeInfo.field]);
+    return [album.year, value].filter(Boolean).join(" · ") || album.year || "";
+  }
 
   function selectGroup(item) {
     setGroup(item);
     setArtist(null);
     setArtistSearch("");
-    setDetail({ kind: groupKind, id: mode === "labels" ? item.id : item.slug });
+    setDetail({ kind: mode, id: item.slug });
   }
 
   function selectArtist(item) {
@@ -135,28 +149,14 @@ export default function App() {
     setDetail({ kind: "artist", id: item.id });
   }
 
-  function selectAlbum(item) {
-    setDetail({ kind: "album", id: item.id });
-  }
-
-  // Disco de este mismo artista pero fuera del sello/productor activo:
-  // saltamos el filtro de columna 1 al sello/productor de ESE disco,
-  // manteniendo el artista seleccionado.
-  function selectForeignAlbum(album) {
-    if (mode === "labels") {
-      if (album.label_id) {
-        setGroup({ id: album.label_id, name: album.label });
-        setSearch("");
-      }
-    } else {
-      const producers = (album.producers || "")
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean);
-      if (producers.length) {
-        setGroup({ slug: slugify(producers[0]), name: producers[0] });
-        setSearch("");
-      }
+  // Cualquier disco, esté o no dentro del sello/productor/master activo:
+  // saltamos el filtro de columna 1 al de ESE disco (según el modo actual),
+  // manteniendo el artista seleccionado, y abrimos su panel de detalle.
+  function selectAlbum(album) {
+    const value = firstValue(mode, album[modeInfo.field]);
+    if (value) {
+      setGroup({ slug: slugify(value), name: value });
+      setSearch("");
     }
     setDetail({ kind: "album", id: album.id });
   }
@@ -166,27 +166,24 @@ export default function App() {
       <header className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800 shrink-0">
         <h1 className="font-semibold text-zinc-50">Sellos &amp; Productores</h1>
         <div className="flex rounded overflow-hidden border border-zinc-800">
-          <button
-            onClick={() => switchMode("labels")}
-            className={`px-3 py-1 text-xs ${mode === "labels" ? "bg-zinc-100 text-zinc-900" : "bg-zinc-900 text-zinc-400"}`}
-          >
-            Sellos
-          </button>
-          <button
-            onClick={() => switchMode("producers")}
-            className={`px-3 py-1 text-xs ${mode === "producers" ? "bg-zinc-100 text-zinc-900" : "bg-zinc-900 text-zinc-400"}`}
-          >
-            Productores
-          </button>
+          {MODES.map((m) => (
+            <button
+              key={m.kind}
+              onClick={() => switchMode(m.kind)}
+              className={`px-3 py-1 text-xs ${mode === m.kind ? "bg-zinc-100 text-zinc-900" : "bg-zinc-900 text-zinc-400"}`}
+            >
+              {m.tabLabel}
+            </button>
+          ))}
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 min-w-0">
           <Column
-            title={mode === "labels" ? "Sellos" : "Productores"}
+            title={modeInfo.columnTitle}
             items={sortedGroups}
-            selectedId={groupId}
+            selectedId={groupSlug}
             onSelect={selectGroup}
             search={search}
             onSearch={setSearch}
@@ -215,7 +212,7 @@ export default function App() {
                   ? artistsQuery.isLoading
                     ? "Buscando..."
                     : "Sin resultados"
-                  : "Elige un sello/productor o busca un artista"
+                  : "Elige un filtro o busca un artista"
             }
           />
         </div>
@@ -223,11 +220,11 @@ export default function App() {
           <AlbumColumn
             primaryAlbums={primaryAlbums}
             extraAlbums={extraAlbums}
-            onSelectPrimary={selectAlbum}
-            onSelectExtra={selectForeignAlbum}
+            onSelect={selectAlbum}
+            metaText={metaText}
             emptyLabel={
               artist
-                ? (groupId ? albumsQuery.isLoading : artistAlbumsQuery.isLoading)
+                ? (groupSlug ? albumsQuery.isLoading : artistAlbumsQuery.isLoading)
                   ? "Cargando..."
                   : "Sin discos"
                 : "Elige un artista"

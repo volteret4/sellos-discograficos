@@ -1,16 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchLabel, fetchProducer, fetchArtist, fetchAlbum, imageUrl } from "../api.js";
+import { fetchGroup, fetchArtist, fetchAlbum, imageUrl } from "../api.js";
 
-const FETCHERS = {
-  label: fetchLabel,
-  producer: fetchProducer,
-  artist: fetchArtist,
-  album: fetchAlbum,
-};
+const GROUP_KINDS = new Set(["labels", "producers", "masters"]);
 
 const KIND_LABEL = {
-  label: "Sello",
-  producer: "Productor",
+  labels: "Sello",
+  producers: "Productor",
+  masters: "Mastering",
   artist: "Artista",
   album: "Disco",
 };
@@ -41,10 +37,14 @@ function Field({ label, value }) {
 
 export default function DetailPanel({ detail, onClose }) {
   const { kind, id } = detail;
-  const fetcher = FETCHERS[kind];
+  const isGroup = GROUP_KINDS.has(kind);
   const { data, isLoading } = useQuery({
     queryKey: [kind, id],
-    queryFn: () => fetcher(id),
+    queryFn: () => {
+      if (isGroup) return fetchGroup(kind, id);
+      if (kind === "artist") return fetchArtist(id);
+      return fetchAlbum(id);
+    },
   });
 
   return (
@@ -73,12 +73,20 @@ export default function DetailPanel({ detail, onClose }) {
               <p className="text-sm text-zinc-400">{data.artist_name}</p>
             )}
 
-            {kind === "label" && (
+            {kind === "labels" && (
               <>
                 <Field label="País" value={data.country} />
                 <Field label="Fundado" value={data.founded_year} />
                 <Field label="Sello padre" value={data.parent_label} />
+                <Field label="Discos" value={data.album_count} />
+                <Field label="Artistas" value={data.artist_count} />
+                <Field label="Géneros habituales" value={(data.top_genres || []).join(", ")} />
                 <Field label="Perfil" value={data.profile || data.description} />
+                {!data.matched_label_id && (
+                  <p className="mt-3 text-xs text-zinc-500">
+                    Sin ficha propia en Discogs/MusicBrainz — solo datos de tu colección.
+                  </p>
+                )}
                 <div className="mt-3 flex flex-col gap-1">
                   <Link href={data.discogs_url}>Discogs</Link>
                   <Link href={data.official_website}>Web oficial</Link>
@@ -88,7 +96,7 @@ export default function DetailPanel({ detail, onClose }) {
               </>
             )}
 
-            {kind === "producer" && (
+            {(kind === "producers" || kind === "masters") && (
               <>
                 <Field label="Discos" value={data.album_count} />
                 <Field label="Artistas" value={data.artist_count} />

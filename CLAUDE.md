@@ -5,34 +5,62 @@ Guía para trabajar en este repo.
 ## Qué es
 
 Navegador de la colección musical de `music-fuzzy` organizado por
-Sellos > Artistas > Discos y Productores > Artistas > Discos, con panel
-lateral de detalle (imagen + info) al pulsar cualquier elemento. Ver
-README.md para contexto completo (origen de datos, despliegue).
+Sellos > Artistas > Discos, Productores > Artistas > Discos y
+Masters > Artistas > Discos, con panel lateral de detalle (imagen + info)
+al pulsar cualquier elemento. Ver README.md para contexto completo (origen
+de datos, despliegue).
 
 ## Arquitectura
 
 - `api/` — FastAPI, Python stdlib `sqlite3` en modo solo lectura (sin ORM).
   - `db.py` — conexión y helpers `query`/`query_one`.
-  - `main.py` — todas las rutas (`/api/labels`, `/api/producers`, `/api/artists`,
-    `/api/albums`, `/api/images/...`).
-  - `producers.py` — construye en memoria (con caché TTL de 5 min) el índice
-    de productores a partir de `albums.producers` (texto libre, split por
-    comas). No hay tabla `producers` en la BD.
+  - `main.py` — todas las rutas: `/api/groups/{kind}/...` (sellos/productores/masters),
+    `/api/artists`, `/api/albums`, `/api/images/...`.
+  - `text_groups.py` — `TextGroupIndex`, construye en memoria (caché TTL de
+    5 min) el índice de un campo de texto libre de `albums` (`label`,
+    `producers` o `mastering_engineers`) → slug → {artistas, discos}. Las
+    tres agrupaciones ("kind": `labels`/`producers`/`masters`) comparten esta
+    misma clase; no hay tablas `producers`/`masters` en la BD, y **`labels`
+    tampoco se usa para agrupar** (solo como enriquecimiento opcional, ver
+    más abajo).
   - `images.py` — resolución de imágenes: ruta local de la BD → caché en
     disco (`covers/<tipo>/<id>.*`) → Discogs/Cover Art Archive/Last.fm.
 - `web/` — React 18 + Vite + Tailwind + `@tanstack/react-query`, servida por
   nginx en producción (`web/nginx.conf` proxea `/api/` al contenedor de la
   API). Tres columnas (grupo → artistas → discos) + `DetailPanel` como panel
-  lateral fijo a la derecha.
+  lateral fijo a la derecha. `MODES` en `App.jsx` es la única fuente de
+  verdad de qué "kind" existen y qué campo de `albums` usan — añadir un
+  cuarto filtro es, en principio, una entrada más ahí + en `INDEXES` del
+  backend.
 
 ## Base de datos
 
 Lee `musica_local.sqlite` de `music-fuzzy` tal cual, sin copiarla ni
-transformarla. Tablas relevantes: `labels`, `label_release_relationships`
-(sello↔disco, con `catalog_number`), `artists`, `albums`. `label_artist_relationships`
-existe en el esquema pero está vacía — la jerarquía sello→artista se deriva
-siempre vía `label_release_relationships` + `albums.artist_id`, nunca de esa
-tabla.
+transformarla.
+
+**Sellos/Productores/Masters se agrupan por texto libre de `albums`**
+(`label`, `producers`, `mastering_engineers`), no por tablas normalizadas.
+Esto fue una decisión deliberada: la tabla `labels` + `label_release_relationships`
+existe y está bastante poblada, pero esa segunda tabla enlaza un álbum con
+*todos* los sellos que MusicBrainz asocia al release-group entero (a veces
+más de 50 filas por álbum — reediciones/prensajes de todo el mundo), no con
+"el sello de tu copia concreta". Usarla como fuente de la agrupación
+producía sellos que no coincidían con lo que el usuario tenía tageado
+(incluso discos con `albums.label` vacío aparecían bajo un sello real). Se
+descartó a favor de agrupar directamente por `albums.label`, igual que ya
+se hacía con Productores.
+
+`labels` (la tabla) se sigue usando, pero solo como **enriquecimiento
+opcional**: si el nombre de sello derivado del texto hace *match* exacto
+(case-insensitive) con `labels.name`, se añaden país/perfil/discogs_url/etc.
+al detalle (ver `get_group` en `main.py`). Sin match, el sello solo tiene lo
+que se puede derivar del propio texto (recuento de discos/artistas,
+géneros). El mismo patrón de match-por-nombre se usa para Productores/Masters
+contra la tabla `artists` (p.ej. Nils Frahm aparece tanto como artista como
+mastering engineer).
+
+Sellos NO trocea por comas (nombres de sello a veces llevan ", Inc" / ", S.L.");
+Productores/Masters sí (listas de personas). Ver `text_groups.py::TextGroupIndex`.
 
 `DB_PATH` apunta al archivo (por defecto `musica_local.sqlite` en el cwd).
 En producción es un bind-mount de solo lectura del `.sqlite` copiado desde
@@ -51,8 +79,12 @@ hacen esas apps antes de reinventarlo.
 
 ## Limitaciones conocidas (v1)
 
-- Productores: sin normalización de variantes de nombre (p.ej. "Rollo" y
-  "Rollo & Sister Bliss" son productores distintos). Si hace falta agruparlos,
-  tocaría `api/producers.py::_split_producers`/`_slugify`.
+- Productores/Masters: sin normalización de variantes de nombre (p.ej.
+  "Rollo" y "Rollo & Sister Bliss" son productores distintos). Si hace falta
+  agruparlos, tocaría `TextGroupIndex._split`/`_slugify` en `text_groups.py`.
+- Sellos: al no trocear por comas, un caso real como "Epic, Clean Slate" (dos
+  sellos conjuntos) queda como un único grupo con ese nombre literal, en vez
+  de partirse en dos. Se aceptó el trade-off para no romper razones sociales
+  con coma ("Casablanca Records, Inc").
 - Sin sincronización automática de la BD al servidor: hay que copiarla a mano
   (README → "Despliegue").

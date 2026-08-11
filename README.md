@@ -5,10 +5,13 @@ organizada por:
 
 - **Sellos** → Artistas → Discos
 - **Productores** → Artistas → Discos
+- **Masters** → Artistas → Discos
 
-Al pulsar cualquier sello, artista, productor o disco se abre un panel
+Al pulsar cualquier sello/productor/master, artista o disco se abre un panel
 lateral con su imagen e información (biografía, país, enlaces a
-Discogs/MusicBrainz/Last.fm/Wikipedia, créditos...).
+Discogs/MusicBrainz/Last.fm/Wikipedia, créditos...). Al pulsar un disco, si
+no coincide con el filtro activo, se salta automáticamente a su propio
+sello/productor/master, manteniendo el artista seleccionado.
 
 Mismo patrón que `mixxx_info` dentro de [repeat-one/tumtumpa](https://github.com/volteret4):
 API en FastAPI + web en React/Vite servida por nginx, cada una en su propio
@@ -17,11 +20,17 @@ contenedor.
 ## Origen de los datos
 
 Lee **directamente y en modo solo lectura** la base de datos SQLite de
-`music-fuzzy` (`musica_local.sqlite`, tablas `labels`, `label_release_relationships`,
-`artists`, `albums`). No existe tabla normalizada de productores: el listado
-de "Productores" se construye en memoria (`api/producers.py`) a partir del
-campo de texto `albums.producers` (nombres separados por comas), sin
-normalización de variantes del mismo nombre — es una primera versión.
+`music-fuzzy` (`musica_local.sqlite`). Sellos, Productores y Masters se
+construyen en memoria (`api/text_groups.py`) a partir de los campos de texto
+libre de `albums` (`label`, `producers`, `mastering_engineers`
+respectivamente) — no hay tablas normalizadas para ninguna de las tres, ni
+siquiera Sellos, aunque exista una tabla `labels`: esa tabla enlaza cada
+álbum con *todos* los sellos que MusicBrainz asocia a nivel de release-group
+(reediciones de medio mundo incluidas), no con el sello real de tu copia, así
+que se usa solo como enriquecimiento opcional (bio/país/discogs) cuando el
+nombre coincide, nunca para decidir a qué sello pertenece un disco. Sin
+normalización de variantes del mismo nombre en ninguna de las tres — es una
+primera versión.
 
 **La copia más actualizada de `musica_local.sqlite` vive en este portátil**,
 no en el servidor. Para que el contenedor en producción tenga datos frescos,
@@ -31,7 +40,7 @@ refrescarlos — no hay sincronización automática todavía.
 
 ## Imágenes
 
-Para cada sello/artista/disco/productor, en este orden:
+Para cada sello/productor/master/artista/disco, en este orden:
 
 1. Ruta local guardada en la BD (`artists.img_paths`, `albums.album_art_path`) —
    solo resuelve en local, donde esas rutas absolutas del portátil existen.

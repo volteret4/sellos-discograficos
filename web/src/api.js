@@ -5,40 +5,24 @@ async function _json(res) {
   return res.json();
 }
 
-export function fetchLabels(q = "") {
+// kind: "labels" | "producers" | "masters"
+
+export function fetchGroups(kind, q = "") {
   const qs = new URLSearchParams();
   if (q) qs.set("q", q);
-  return fetch(`${BASE}/labels?${qs}`).then(_json);
+  return fetch(`${BASE}/groups/${kind}?${qs}`).then(_json);
 }
 
-export function fetchLabel(id) {
-  return fetch(`${BASE}/labels/${id}`).then(_json);
+export function fetchGroup(kind, slug) {
+  return fetch(`${BASE}/groups/${kind}/${encodeURIComponent(slug)}`).then(_json);
 }
 
-export function fetchLabelArtists(id) {
-  return fetch(`${BASE}/labels/${id}/artists`).then(_json);
+export function fetchGroupArtists(kind, slug) {
+  return fetch(`${BASE}/groups/${kind}/${encodeURIComponent(slug)}/artists`).then(_json);
 }
 
-export function fetchLabelArtistAlbums(labelId, artistId) {
-  return fetch(`${BASE}/labels/${labelId}/artists/${artistId}/albums`).then(_json);
-}
-
-export function fetchProducers(q = "") {
-  const qs = new URLSearchParams();
-  if (q) qs.set("q", q);
-  return fetch(`${BASE}/producers?${qs}`).then(_json);
-}
-
-export function fetchProducer(slug) {
-  return fetch(`${BASE}/producers/${encodeURIComponent(slug)}`).then(_json);
-}
-
-export function fetchProducerArtists(slug) {
-  return fetch(`${BASE}/producers/${encodeURIComponent(slug)}/artists`).then(_json);
-}
-
-export function fetchProducerArtistAlbums(slug, artistId) {
-  return fetch(`${BASE}/producers/${encodeURIComponent(slug)}/artists/${artistId}/albums`).then(_json);
+export function fetchGroupArtistAlbums(kind, slug, artistId) {
+  return fetch(`${BASE}/groups/${kind}/${encodeURIComponent(slug)}/artists/${artistId}/albums`).then(_json);
 }
 
 export function fetchArtists(q = "") {
@@ -60,5 +44,6 @@ export function fetchAlbum(id) {
 }
 
 export function imageUrl(kind, id) {
-  return `${BASE}/images/${kind}/${id}`;
+  if (kind === "artist" || kind === "album") return `${BASE}/images/${kind}/${id}`;
+  return `${BASE}/images/group/${kind}/${encodeURIComponent(id)}`;
 }

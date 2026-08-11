@@ -1,6 +1,7 @@
 """
 FastAPI backend for sellos_discograficos — navegador de la colección musical
-organizada por Sellos > Artistas > Discos y Productores > Artistas > Discos.
+organizada por Sellos > Artistas > Discos, Productores > Artistas > Discos
+y Masters > Artistas > Discos.
 
 Run: uvicorn api.main:app --reload --port 8000
 """
@@ -10,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import images, producers as producers_mod
+from . import images, text_groups
 from .db import query, query_one
 
 app = FastAPI(title="sellos_discograficos")
@@ -23,99 +24,53 @@ app.add_middleware(
 )
 
 
+def _index(kind: str) -> text_groups.TextGroupIndex:
+    index = text_groups.INDEXES.get(kind)
+    if not index:
+        raise HTTPException(404, "Tipo de filtro no encontrado")
+    return index
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-# ── Sellos ───────────────────────────────────────────────────────────────
+# ── Sellos / Productores / Masters (derivados de texto libre) ──────────────
 
 
-@app.get("/api/labels")
-def list_labels(q: str = Query("", alias="q")):
-    sql = """
-        SELECT l.id, l.name, l.country, l.discogs_url,
-               COUNT(DISTINCT lrr.album_id) AS album_count,
-               COUNT(DISTINCT al.artist_id) AS artist_count
-        FROM labels l
-        JOIN label_release_relationships lrr ON lrr.label_id = l.id
-        JOIN albums al ON al.id = lrr.album_id
-        {where}
-        GROUP BY l.id
-        ORDER BY l.name COLLATE NOCASE
-    """
-    params: tuple = ()
-    where = ""
-    if q:
-        where = "WHERE l.name LIKE ?"
-        params = (f"%{q}%",)
-    return query(sql.format(where=where), params)
+@app.get("/api/groups/{kind}")
+def list_groups(kind: str, q: str = Query("", alias="q")):
+    return _index(kind).list_groups(q)
 
 
-@app.get("/api/labels/{label_id}")
-def get_label(label_id: int):
-    label = query_one("SELECT * FROM labels WHERE id = ?", (label_id,))
-    if not label:
-        raise HTTPException(404, "Sello no encontrado")
-    return label
+@app.get("/api/groups/{kind}/{slug}")
+def get_group(kind: str, slug: str):
+    group = _index(kind).get_group(slug)
+    if not group:
+        raise HTTPException(404, "No encontrado")
+    if kind == "labels":
+        matched = text_groups.match_label_row(group["name"])
+        for field in (
+            "country", "founded_year", "profile", "description", "discogs_url",
+            "official_website", "wikipedia_url", "bandcamp_url", "parent_label",
+        ):
+            group[field] = matched.get(field) if matched else None
+        group["matched_label_id"] = matched["id"] if matched else None
+    else:
+        matched = text_groups.match_artist_row(group["name"])
+        group["matched_artist_id"] = matched["id"] if matched else None
+    return group
 
 
-@app.get("/api/labels/{label_id}/artists")
-def label_artists(label_id: int):
-    return query(
-        """
-        SELECT ar.id, ar.name, COUNT(DISTINCT al.id) AS album_count
-        FROM label_release_relationships lrr
-        JOIN albums al ON al.id = lrr.album_id
-        JOIN artists ar ON ar.id = al.artist_id
-        WHERE lrr.label_id = ?
-        GROUP BY ar.id
-        ORDER BY ar.name COLLATE NOCASE
-        """,
-        (label_id,),
-    )
+@app.get("/api/groups/{kind}/{slug}/artists")
+def group_artists(kind: str, slug: str):
+    return _index(kind).group_artists(slug)
 
 
-@app.get("/api/labels/{label_id}/artists/{artist_id}/albums")
-def label_artist_albums(label_id: int, artist_id: int):
-    return query(
-        """
-        SELECT DISTINCT al.*
-        FROM label_release_relationships lrr
-        JOIN albums al ON al.id = lrr.album_id
-        WHERE lrr.label_id = ? AND al.artist_id = ?
-        ORDER BY al.year
-        """,
-        (label_id, artist_id),
-    )
-
-
-# ── Productores ──────────────────────────────────────────────────────────
-
-
-@app.get("/api/producers")
-def list_producers(q: str = Query("", alias="q")):
-    return producers_mod.list_producers(q)
-
-
-@app.get("/api/producers/{slug}")
-def get_producer(slug: str):
-    producer = producers_mod.get_producer(slug)
-    if not producer:
-        raise HTTPException(404, "Productor no encontrado")
-    matched = producers_mod.match_artist_row(producer["name"])
-    producer["matched_artist_id"] = matched["id"] if matched else None
-    return producer
-
-
-@app.get("/api/producers/{slug}/artists")
-def producer_artists(slug: str):
-    return producers_mod.producer_artists(slug)
-
-
-@app.get("/api/producers/{slug}/artists/{artist_id}/albums")
-def producer_artist_albums(slug: str, artist_id: int):
-    albums = producers_mod.producer_artist_albums(slug, artist_id)
+@app.get("/api/groups/{kind}/{slug}/artists/{artist_id}/albums")
+def group_artist_albums(kind: str, slug: str, artist_id: int):
+    albums = _index(kind).group_artist_albums(slug, artist_id)
     if not albums:
         return []
     full = query(
@@ -158,19 +113,8 @@ def get_artist(artist_id: int):
 
 @app.get("/api/artists/{artist_id}/albums")
 def artist_albums(artist_id: int):
-    # label_id es orientativo: si un disco tiene más de un sello enlazado en
-    # label_release_relationships se coge el primero — solo se usa para
-    # poder saltar de "otro disco de este artista" al sello correspondiente,
-    # no para el filtrado principal (eso sigue viniendo de /labels/{id}/artists/...).
     return query(
-        """
-        SELECT al.*,
-               (SELECT lrr.label_id FROM label_release_relationships lrr
-                WHERE lrr.album_id = al.id LIMIT 1) AS label_id
-        FROM albums al
-        WHERE al.artist_id = ?
-        ORDER BY al.year
-        """,
+        "SELECT * FROM albums WHERE artist_id = ? ORDER BY year",
         (artist_id,),
     )
 
@@ -216,20 +160,17 @@ def image_album(album_id: int):
     return _serve(images.resolve_album_image(album))
 
 
-@app.get("/api/images/label/{label_id}")
-def image_label(label_id: int):
-    label = query_one("SELECT * FROM labels WHERE id = ?", (label_id,))
-    if not label:
-        raise HTTPException(404, "Sello no encontrado")
-    return _serve(images.resolve_label_image(label))
-
-
-@app.get("/api/images/producer/{slug}")
-def image_producer(slug: str):
-    producer = producers_mod.get_producer(slug)
-    if not producer:
-        raise HTTPException(404, "Productor no encontrado")
-    matched = producers_mod.match_artist_row(producer["name"])
+@app.get("/api/images/group/{kind}/{slug}")
+def image_group(kind: str, slug: str):
+    group = _index(kind).get_group(slug)
+    if not group:
+        raise HTTPException(404, "No encontrado")
+    if kind == "labels":
+        matched = text_groups.match_label_row(group["name"])
+        if not matched:
+            raise HTTPException(404, "Sin imagen")
+        return _serve(images.resolve_label_image(matched))
+    matched = text_groups.match_artist_row(group["name"])
     if not matched:
         raise HTTPException(404, "Sin imagen")
     return _serve(images.resolve_artist_image(matched))
