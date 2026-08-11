@@ -41,6 +41,12 @@ export function fetchProducerArtistAlbums(slug, artistId) {
   return fetch(`${BASE}/producers/${encodeURIComponent(slug)}/artists/${artistId}/albums`).then(_json);
 }
 
+export function fetchArtists(q = "") {
+  const qs = new URLSearchParams();
+  if (q) qs.set("q", q);
+  return fetch(`${BASE}/artists?${qs}`).then(_json);
+}
+
 export function fetchArtist(id) {
   return fetch(`${BASE}/artists/${id}`).then(_json);
 }

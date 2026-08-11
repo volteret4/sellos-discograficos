@@ -130,6 +130,24 @@ def producer_artist_albums(slug: str, artist_id: int):
 # ── Artistas / Discos ────────────────────────────────────────────────────
 
 
+@app.get("/api/artists")
+def list_artists(q: str = Query("", alias="q")):
+    sql = """
+        SELECT a.id, a.name, COUNT(al.id) AS album_count
+        FROM artists a
+        LEFT JOIN albums al ON al.artist_id = a.id
+        {where}
+        GROUP BY a.id
+        ORDER BY a.name COLLATE NOCASE
+    """
+    params: tuple = ()
+    where = ""
+    if q:
+        where = "WHERE a.name LIKE ?"
+        params = (f"%{q}%",)
+    return query(sql.format(where=where), params)
+
+
 @app.get("/api/artists/{artist_id}")
 def get_artist(artist_id: int):
     artist = query_one("SELECT * FROM artists WHERE id = ?", (artist_id,))

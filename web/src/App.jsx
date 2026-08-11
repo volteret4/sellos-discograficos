@@ -10,6 +10,7 @@ import {
   fetchProducers,
   fetchProducerArtists,
   fetchProducerArtistAlbums,
+  fetchArtists,
   fetchArtistAlbums,
 } from "./api.js";
 
@@ -41,6 +42,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [group, setGroup] = useState(null); // selected label or producer
+  const [artistSearch, setArtistSearch] = useState("");
   const [artist, setArtist] = useState(null); // selected artist
   const [detail, setDetail] = useState(null); // { kind, id }
 
@@ -49,6 +51,7 @@ export default function App() {
   function switchMode(next) {
     setMode(next);
     setSearch("");
+    setArtistSearch("");
     setGroup(null);
     setArtist(null);
     setDetail(null);
@@ -66,12 +69,31 @@ export default function App() {
 
   const groupId = group ? (mode === "labels" ? group.id : group.slug) : null;
 
-  const artistsQuery = useQuery({
+  // Artistas del sello/productor seleccionado — se filtran en el cliente
+  // con el cuadro de búsqueda (listas pequeñas, no hace falta ir al server).
+  const groupArtistsQuery = useQuery({
     queryKey: [mode, "artists", groupId],
     queryFn: () =>
       mode === "labels" ? fetchLabelArtists(groupId) : fetchProducerArtists(groupId),
     enabled: !!groupId,
   });
+
+  const filteredGroupArtists = useMemo(() => {
+    const data = groupArtistsQuery.data || [];
+    const q = artistSearch.trim().toLowerCase();
+    return q ? data.filter((a) => a.name.toLowerCase().includes(q)) : data;
+  }, [groupArtistsQuery.data, artistSearch]);
+
+  // Sin sello/productor marcado: busca entre todos los artistas de la
+  // colección (requiere texto para no traerse miles de filas de golpe).
+  const globalArtistsQuery = useQuery({
+    queryKey: ["artists-search", artistSearch],
+    queryFn: () => fetchArtists(artistSearch),
+    enabled: !groupId && artistSearch.trim().length > 0,
+  });
+
+  const artistsQuery = groupId ? groupArtistsQuery : globalArtistsQuery;
+  const artistItems = groupId ? filteredGroupArtists : globalArtistsQuery.data || [];
 
   const albumsQuery = useQuery({
     queryKey: [mode, "albums", groupId, artist?.id],
@@ -82,24 +104,29 @@ export default function App() {
     enabled: !!groupId && !!artist,
   });
 
-  // Resto de discos del artista seleccionado, para mostrarlos atenuados
-  // junto a los del sello/productor activo.
+  // Discografía completa del artista seleccionado.
   const artistAlbumsQuery = useQuery({
     queryKey: ["artist-albums", artist?.id],
     queryFn: () => fetchArtistAlbums(artist.id),
     enabled: !!artist,
   });
 
+  // Con sello/productor activo: los del filtro como principales y el resto
+  // de la discografía atenuada debajo. Sin filtro activo (búsqueda global
+  // de artista): la discografía completa tal cual, sin sección "otros".
+  const primaryAlbums = groupId ? albumsQuery.data || [] : artistAlbumsQuery.data || [];
   const extraAlbums = useMemo(() => {
+    if (!groupId) return [];
     const primaryIds = new Set((albumsQuery.data || []).map((a) => a.id));
     return (artistAlbumsQuery.data || [])
       .filter((a) => !primaryIds.has(a.id))
       .sort((a, b) => (a.year || "").localeCompare(b.year || ""));
-  }, [albumsQuery.data, artistAlbumsQuery.data]);
+  }, [groupId, albumsQuery.data, artistAlbumsQuery.data]);
 
   function selectGroup(item) {
     setGroup(item);
     setArtist(null);
+    setArtistSearch("");
     setDetail({ kind: groupKind, id: mode === "labels" ? item.id : item.slug });
   }
 
@@ -173,20 +200,38 @@ export default function App() {
         <div className="flex-1 min-w-0">
           <Column
             title="Artistas"
-            items={artistsQuery.data || []}
+            items={artistItems}
             selectedId={artist?.id}
             onSelect={selectArtist}
+            search={artistSearch}
+            onSearch={setArtistSearch}
             subtitle={(item) => `${item.album_count} discos`}
-            emptyLabel={group ? (artistsQuery.isLoading ? "Cargando..." : "Sin artistas") : "Elige un sello o productor"}
+            emptyLabel={
+              group
+                ? artistsQuery.isLoading
+                  ? "Cargando..."
+                  : "Sin artistas"
+                : artistSearch.trim()
+                  ? artistsQuery.isLoading
+                    ? "Buscando..."
+                    : "Sin resultados"
+                  : "Elige un sello/productor o busca un artista"
+            }
           />
         </div>
         <div className="flex-[2] min-w-0">
           <AlbumColumn
-            primaryAlbums={albumsQuery.data || []}
+            primaryAlbums={primaryAlbums}
             extraAlbums={extraAlbums}
             onSelectPrimary={selectAlbum}
             onSelectExtra={selectForeignAlbum}
-            emptyLabel={artist ? (albumsQuery.isLoading ? "Cargando..." : "Sin discos") : "Elige un artista"}
+            emptyLabel={
+              artist
+                ? (groupId ? albumsQuery.isLoading : artistAlbumsQuery.isLoading)
+                  ? "Cargando..."
+                  : "Sin discos"
+                : "Elige un artista"
+            }
           />
         </div>
       </div>
