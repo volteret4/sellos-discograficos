@@ -242,6 +242,7 @@ export default function App() {
             items={artistItems}
             selectedId={artist?.id}
             onSelect={selectArtist}
+            ownedArtist={(item) => item.name}
             search={artistSearch}
             onSearch={setArtistSearch}
             subtitle={(item) => `${item.album_count} discos`}
@@ -264,6 +265,7 @@ export default function App() {
             extraAlbums={extraAlbums}
             onSelect={selectAlbum}
             selectedId={albumId}
+            artistName={artist?.name}
             metaText={metaText}
             emptyLabel={
               artist

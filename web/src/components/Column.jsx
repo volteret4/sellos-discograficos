@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { OwnedSlot } from "./AlbumColumn.jsx";
 
 export default function Column({
   title,
@@ -13,6 +14,7 @@ export default function Column({
   sortValue,
   onSortChange,
   getId = (item) => item.id,
+  ownedArtist,
 }) {
   // Al cambiar la selección desde fuera (p.ej. al pulsar un disco de otro
   // sello), que el elemento marcado quede a la vista.
@@ -60,7 +62,10 @@ export default function Column({
               selectedId != null && selectedId === getId(item) ? "bg-zinc-800 border-l-2 border-l-zinc-300" : ""
             }`}
           >
-            <div className="truncate text-zinc-100">{item.name}</div>
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="truncate text-zinc-100">{item.name}</span>
+              {ownedArtist && <OwnedSlot artist={ownedArtist(item)} />}
+            </div>
             {subtitle && <div className="text-xs text-zinc-500">{subtitle(item)}</div>}
           </button>
         ))}

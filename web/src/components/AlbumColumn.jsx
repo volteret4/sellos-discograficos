@@ -1,8 +1,19 @@
 import { useEffect, useRef } from "react";
 
+// Hueco para los iconos de ya-lo-tengo (owned-badges.js los pinta dentro;
+// React lo renderiza siempre vacío y no toca lo que se le añade).
+export function OwnedSlot({ artist, album }) {
+  if (!artist) return null;
+  return (
+    <span className="shrink-0" data-owned-artist={artist} data-owned-album={album || undefined}>
+      <span data-owned-slot />
+    </span>
+  );
+}
+
 const SELECTED = "bg-zinc-800 border-l-2 border-l-zinc-300 !opacity-100";
 
-export default function AlbumColumn({ primaryAlbums, extraAlbums, onSelect, metaText, emptyLabel, selectedId }) {
+export default function AlbumColumn({ primaryAlbums, extraAlbums, onSelect, metaText, emptyLabel, selectedId, artistName }) {
   const isEmpty = primaryAlbums.length === 0 && extraAlbums.length === 0;
   const selectedRef = useRef(null);
   useEffect(() => {
@@ -26,7 +37,10 @@ export default function AlbumColumn({ primaryAlbums, extraAlbums, onSelect, meta
               album.id === selectedId ? SELECTED : ""
             }`}
           >
-            <div className="truncate text-zinc-100">{album.name}</div>
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="truncate text-zinc-100">{album.name}</span>
+              <OwnedSlot artist={artistName} album={album.name} />
+            </div>
             <div className="text-xs text-zinc-500">{metaText(album)}</div>
           </button>
         ))}
@@ -45,7 +59,10 @@ export default function AlbumColumn({ primaryAlbums, extraAlbums, onSelect, meta
               album.id === selectedId ? SELECTED : ""
             }`}
           >
-            <div className="truncate text-zinc-200">{album.name}</div>
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="truncate text-zinc-200">{album.name}</span>
+              <OwnedSlot artist={artistName} album={album.name} />
+            </div>
             <div className="text-xs text-zinc-500">{metaText(album)}</div>
           </button>
         ))}
