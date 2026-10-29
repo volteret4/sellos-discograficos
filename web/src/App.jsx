@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Column from "./components/Column.jsx";
 import AlbumColumn from "./components/AlbumColumn.jsx";
@@ -42,10 +42,14 @@ function slugify(name) {
 
 // Sellos no se trocea por comas (nombres de sello pueden llevar ", Inc" /
 // ", S.L."), Productores/Masters sí — debe coincidir con text_groups.py.
-function firstValue(kind, raw) {
+function splitValues(kind, raw) {
   const text = (raw || "").trim();
-  if (!text) return "";
-  return kind === "labels" ? text : text.split(",")[0].trim();
+  if (!text) return [];
+  return kind === "labels" ? [text] : text.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+function firstValue(kind, raw) {
+  return splitValues(kind, raw)[0] || "";
 }
 
 export default function App() {
@@ -55,6 +59,7 @@ export default function App() {
   const [group, setGroup] = useState(null); // { slug, name }
   const [artistSearch, setArtistSearch] = useState("");
   const [artist, setArtist] = useState(null); // selected artist
+  const [albumId, setAlbumId] = useState(null); // disco marcado en la 3ª columna
   const [detail, setDetail] = useState(null); // { kind, id }
 
   const modeInfo = MODES.find((m) => m.kind === mode);
@@ -65,6 +70,7 @@ export default function App() {
     setArtistSearch("");
     setGroup(null);
     setArtist(null);
+    setAlbumId(null);
     setDetail(null);
   }
 
@@ -95,16 +101,20 @@ export default function App() {
     return q ? data.filter((a) => a.name.toLowerCase().includes(q)) : data;
   }, [groupArtistsQuery.data, artistSearch]);
 
-  // Sin sello/productor/master marcado: busca entre todos los artistas de
-  // la colección (requiere texto para no traerse miles de filas de golpe).
+  // Sin sello/productor/master marcado, o si la búsqueda no encuentra a
+  // nadie dentro del marcado: busca entre todos los artistas de la colección
+  // (requiere texto para no traerse miles de filas de golpe).
+  const searchingGlobally =
+    artistSearch.trim().length > 0 &&
+    (!groupSlug || (groupArtistsQuery.isSuccess && filteredGroupArtists.length === 0));
   const globalArtistsQuery = useQuery({
     queryKey: ["artists-search", artistSearch],
     queryFn: () => fetchArtists(artistSearch),
-    enabled: !groupSlug && artistSearch.trim().length > 0,
+    enabled: searchingGlobally,
   });
 
-  const artistsQuery = groupSlug ? groupArtistsQuery : globalArtistsQuery;
-  const artistItems = groupSlug ? filteredGroupArtists : globalArtistsQuery.data || [];
+  const artistsQuery = searchingGlobally ? globalArtistsQuery : groupArtistsQuery;
+  const artistItems = searchingGlobally ? globalArtistsQuery.data || [] : filteredGroupArtists;
 
   const albumsQuery = useQuery({
     queryKey: [mode, "albums", groupSlug, artist?.id],
@@ -140,26 +150,57 @@ export default function App() {
   function selectGroup(item) {
     setGroup(item);
     setArtist(null);
+    setAlbumId(null);
     setArtistSearch("");
     setDetail({ kind: mode, id: item.slug });
   }
 
   function selectArtist(item) {
     setArtist(item);
+    setAlbumId(null);
     setDetail({ kind: "artist", id: item.id });
   }
 
-  // Cualquier disco, esté o no dentro del sello/productor/master activo:
-  // saltamos el filtro de columna 1 al de ESE disco (según el modo actual),
-  // manteniendo el artista seleccionado, y abrimos su panel de detalle.
-  function selectAlbum(album) {
-    const value = firstValue(mode, album[modeInfo.field]);
-    if (value) {
-      setGroup({ slug: slugify(value), name: value });
+  // Marca el disco y, si su sello/productor/master no es el marcado en la
+  // columna 1, salta a ese (con varios productores/masters, se queda en el
+  // actual si es uno de ellos). Se mantiene el artista seleccionado.
+  function markAlbum(album) {
+    const values = splitValues(mode, album[modeInfo.field]);
+    if (values.length && !values.some((v) => slugify(v) === groupSlug)) {
+      setGroup({ slug: slugify(values[0]), name: values[0] });
       setSearch("");
     }
+    setAlbumId(album.id);
+  }
+
+  function selectAlbum(album) {
+    markAlbum(album);
     setDetail({ kind: "album", id: album.id });
   }
+
+  // ── Siempre un elemento marcado en cada columna ──────────────────────────
+  // Las selecciones automáticas solo marcan; el panel de detalle se abre
+  // únicamente al pulsar.
+  useEffect(() => {
+    if (!group && sortedGroups.length > 0) {
+      setGroup({ slug: sortedGroups[0].slug, name: sortedGroups[0].name });
+    }
+  }, [group, sortedGroups]);
+
+  useEffect(() => {
+    const data = groupArtistsQuery.data || [];
+    if (groupSlug && !artist && data.length > 0) setArtist(data[0]);
+  }, [groupSlug, artist, groupArtistsQuery.data]);
+
+  useEffect(() => {
+    if (!artist || !artistAlbumsQuery.isSuccess || (groupSlug && !albumsQuery.isSuccess)) return;
+    const all = [...primaryAlbums, ...extraAlbums];
+    if (all.some((a) => a.id === albumId)) return;
+    if (primaryAlbums.length > 0) setAlbumId(primaryAlbums[0].id);
+    // Artista de fuera del filtro (búsqueda global): saltar al grupo de su
+    // primer disco, así las tres columnas vuelven a cuadrar.
+    else if (extraAlbums.length > 0) markAlbum(extraAlbums[0]);
+  }, [artist, albumId, primaryAlbums, extraAlbums, artistAlbumsQuery.isSuccess, albumsQuery.isSuccess, groupSlug]);
 
   return (
     <div className="h-screen flex flex-col">
@@ -184,6 +225,7 @@ export default function App() {
             title={modeInfo.columnTitle}
             items={sortedGroups}
             selectedId={groupSlug}
+            getId={(item) => item.slug}
             onSelect={selectGroup}
             search={search}
             onSearch={setSearch}
@@ -196,7 +238,7 @@ export default function App() {
         </div>
         <div className="flex-1 min-w-0">
           <Column
-            title="Artistas"
+            title={searchingGlobally && groupSlug ? "Artistas (toda la colección)" : "Artistas"}
             items={artistItems}
             selectedId={artist?.id}
             onSelect={selectArtist}
@@ -221,6 +263,7 @@ export default function App() {
             primaryAlbums={primaryAlbums}
             extraAlbums={extraAlbums}
             onSelect={selectAlbum}
+            selectedId={albumId}
             metaText={metaText}
             emptyLabel={
               artist

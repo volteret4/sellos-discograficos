@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 export default function Column({
   title,
   items,
@@ -10,7 +12,15 @@ export default function Column({
   sortOptions,
   sortValue,
   onSortChange,
+  getId = (item) => item.id,
 }) {
+  // Al cambiar la selección desde fuera (p.ej. al pulsar un disco de otro
+  // sello), que el elemento marcado quede a la vista.
+  const selectedRef = useRef(null);
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedId, items]);
+
   return (
     <div className="flex flex-col w-full h-full border-r border-zinc-800 min-w-0">
       <div className="px-3 py-2 border-b border-zinc-800 shrink-0">
@@ -43,10 +53,11 @@ export default function Column({
         )}
         {items.map((item) => (
           <button
-            key={item.id}
+            key={getId(item)}
+            ref={selectedId != null && selectedId === getId(item) ? selectedRef : null}
             onClick={() => onSelect(item)}
             className={`w-full text-left px-3 py-2 border-b border-zinc-900 hover:bg-zinc-900 transition-colors ${
-              selectedId === item.id ? "bg-zinc-800" : ""
+              selectedId != null && selectedId === getId(item) ? "bg-zinc-800 border-l-2 border-l-zinc-300" : ""
             }`}
           >
             <div className="truncate text-zinc-100">{item.name}</div>
